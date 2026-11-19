@@ -3,6 +3,7 @@ import pytest
 import math
 from pathlib import Path
 
+from app.cli import main
 from app.core import (
     clean_text,
     detokenize,
@@ -189,7 +190,6 @@ def test_generate_suggestions_returns_multiple_alternatives():
 
 
 def test_dialogue_generation_npc_consistency():
-    # When filtering for Guard, generated dialogue should reflect guard vocabulary
     guard_dialogue = generate_dialogue(
         prompt="Halt",
         npc_filter="Guard",
@@ -225,6 +225,42 @@ def test_milestone_3():
 # ============================================================================
 # Milestone 4: Design a CLI where users can input a starting phrase and generate dialogue.
 # ============================================================================
-@pytest.mark.skip(reason="remove this line when you start milestone 4")
-def test_milestone_4():
-    raise NotImplementedError("write the test for milestone 4")
+
+def test_cli_generate_command(capsys):
+    main(["generate", "Welcome to", "--length", "20", "--suggestions", "2", "--seed", "42"])
+    out = capsys.readouterr().out
+    assert "suggestion(s) for starting phrase 'Welcome to'" in out
+    assert '1. "' in out
+    assert '2. "' in out
+
+
+def test_cli_npc_filter_and_length(capsys):
+    main(["generate", "Halt", "--npc", "Guard", "--length", "15", "--suggestions", "1", "--seed", "7"])
+    out = capsys.readouterr().out
+    assert "[Guard]" in out
+    assert "Halt" in out
+
+
+def test_cli_custom_corpus(tmp_path, capsys):
+    custom_file = tmp_path / "custom_game.txt"
+    custom_file.write_text("Pirate: Ahoy matey! Sail the high seas for hidden treasure.\n")
+    main(["generate", "Ahoy", "--corpus", str(custom_file), "--suggestions", "1", "--seed", "1"])
+    out = capsys.readouterr().out
+    assert "Ahoy" in out
+    assert any(w in out.lower() for w in ["matey", "sail", "treasure", "seas"])
+
+
+def test_cli_stats_command(capsys):
+    main(["stats"])
+    out = capsys.readouterr().out
+    assert "Game Dialogue Corpus Statistics" in out
+    assert "Total Sentences:" in out
+    assert "Vocabulary Size:" in out
+    assert "Guard:" in out
+
+
+def test_milestone_4(capsys):
+    result = milestone_4(prompt="Halt", length=20, suggestions=2, npc="Guard")
+    assert result["status"] == "success"
+    assert result["prompt"] == "Halt"
+    assert len(result["suggestions"]) >= 1

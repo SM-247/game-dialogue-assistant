@@ -20,7 +20,7 @@ Tick these off as you go, and commit after each one.
       Hint: Implement n-gram counting and apply a smoothing technique like Add-k smoothing.
 - [x] **3. Implement dialogue generation logic using the model.**  
       Hint: Use your n-gram model to iteratively predict the next word to form a sequence.
-- [ ] **4. Design a CLI where users can input a starting phrase and generate dialogue.**  
+- [x] **4. Design a CLI where users can input a starting phrase and generate dialogue.**  
       Hint: Create an interactive command-line interface to take user input and display generated text.
 
 ## Run it
@@ -45,6 +45,41 @@ reaches GitHub, treat it as leaked and make a new one.
 
 ## Stretch ideas
 
-- Allow users to specify the desired length of the generated dialogue snippet.
-- Offer multiple alternative dialogue suggestions for a given starting phrase.
-- Enable users to load their own custom game dialogue corpus for model training.
+- [x] Allow users to specify the desired length of the generated dialogue snippet (`-l` / `--length`).
+- [x] Offer multiple alternative dialogue suggestions for a given starting phrase (`-n` / `--suggestions`).
+- [x] Enable users to load their own custom game dialogue corpus for model training (`-c` / `--corpus`).
+- [x] Character consistency conditioning via NPC archetype filtering (`--npc Guard|Merchant|Mage|...`).
+
+## CLI Usage
+
+### Generate Dialogue Snippets
+```bash
+# Generate 3 alternative suggestions from a starting phrase
+python -m app.cli generate "Greetings traveler" --length 20 --suggestions 3
+
+# Target specific NPC archetype for character consistency
+python -m app.cli generate "Halt" --npc Guard --length 15 --suggestions 2
+python -m app.cli generate "The arcane" --npc Mage --suggestions 2
+python -m app.cli generate "A dull blade" --npc Blacksmith --suggestions 2
+
+# Load a custom game dialogue script corpus
+python -m app.cli generate "Welcome" --corpus path/to/dialogues.txt --length 20
+```
+
+### Interactive Prototyping REPL
+```bash
+python -m app.cli interactive
+```
+In interactive mode, designers can test prompts and configure options on the fly:
+- Enter any starting phrase to generate suggestions
+- `/npc <name>`: Switch persona (e.g. `/npc Guard`, `/npc Mage`, `/npc off`)
+- `/length <int>`: Set snippet length
+- `/suggestions <int>`: Set number of alternatives
+- `/temp <float>`: Adjust sampling temperature
+- `/stats`: View corpus and archetype breakdown
+- `quit` / `exit`: Exit the tool
+
+### Corpus Statistics
+```bash
+python -m app.cli stats
+```

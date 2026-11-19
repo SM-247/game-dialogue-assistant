@@ -260,8 +260,9 @@ class NGramLanguageModel:
         n: Order of the n-gram model (e.g. 2 for bigram, 3 for trigram).
         k: Add-k smoothing parameter (k > 0).
         vocabulary: Set of known tokens in vocabulary.
-        ngram_counts: Mapping from context tuple to Counter of next word occurrences.
+        ngram_counts: Mapping from context tuple of length n-1 to Counter of next word occurrences.
         context_counts: Mapping from context tuple to total count of occurrences.
+        counts_by_len: Hierarchical counts for context lengths 1 to n-1.
     """
 
     def __init__(self, n: int = 3, k: float = 0.1, unk_token: str = UNK_TOKEN):
@@ -273,16 +274,25 @@ class NGramLanguageModel:
         self.k = k
         self.unk_token = unk_token
         self.vocabulary: set[str] = {START_TOKEN, END_TOKEN, unk_token}
-        self.ngram_counts: dict[tuple[str, ...], Counter[str]] = defaultdict(Counter)
-        self.context_counts: Counter[tuple[str, ...]] = Counter()
-        self.backoff_counts: dict[int, dict[tuple[str, ...], Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
-        self.backoff_context_counts: dict[int, Counter[tuple[str, ...]]] = defaultdict(Counter)
+        # Hierarchical n-gram counts: context_length -> context_tuple -> Counter(word -> count)
+        self.counts_by_len: dict[int, dict[tuple[str, ...], Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
+        self.context_counts_by_len: dict[int, Counter[tuple[str, ...]]] = defaultdict(Counter)
         self.unigram_counts: Counter[str] = Counter()
         self.total_tokens: int = 0
 
     @property
     def vocab_size(self) -> int:
         return len(self.vocabulary)
+
+    @property
+    def ngram_counts(self) -> dict[tuple[str, ...], Counter[str]]:
+        """Primary n-gram counts for context length n - 1."""
+        return self.counts_by_len[self.n - 1]
+
+    @property
+    def context_counts(self) -> Counter[tuple[str, ...]]:
+        """Primary context counts for context length n - 1."""
+        return self.context_counts_by_len[self.n - 1]
 
     def train(self, sentences: Iterable[Sequence[str]], vocabulary: Iterable[str] | None = None) -> None:
         """Train the n-gram model on tokenized, padded sentences."""
@@ -298,20 +308,13 @@ class NGramLanguageModel:
                 self.unigram_counts[token] += 1
                 self.total_tokens += 1
 
-            for i in range(len(sentence) - self.n + 1):
-                ngram = tuple(sentence[i : i + self.n])
-                context = ngram[:-1]
-                word = ngram[-1]
-                self.ngram_counts[context][word] += 1
-                self.context_counts[context] += 1
-
-            for order in range(1, self.n):
-                for i in range(len(sentence) - order):
-                    sub_ngram = tuple(sentence[i : i + order + 1])
-                    sub_ctx = sub_ngram[:-1]
-                    sub_word = sub_ngram[-1]
-                    self.backoff_counts[order][sub_ctx][sub_word] += 1
-                    self.backoff_context_counts[order][sub_ctx] += 1
+            # Count n-grams for all context lengths from 1 to n-1
+            for length in range(1, self.n):
+                for i in range(len(sentence) - length):
+                    ctx = tuple(sentence[i : i + length])
+                    word = sentence[i + length]
+                    self.counts_by_len[length][ctx][word] += 1
+                    self.context_counts_by_len[length][ctx] += 1
 
     def _normalize_token(self, token: str) -> str:
         """Map unknown tokens to UNK_TOKEN."""
@@ -328,26 +331,33 @@ class NGramLanguageModel:
         return tuple(ctx_tokens)
 
     def probability(self, context: Sequence[str], word: str, use_backoff: bool = True) -> float:
-        """Calculate the smoothed probability P(word | context) with Add-k smoothing."""
+        """Calculate the smoothed probability P(word | context) with Add-k smoothing.
+        
+        Formula:
+            P(word | context) = (Count(context, word) + k) / (Count(context) + k * |V|)
+        """
         norm_word = self._normalize_token(word)
         norm_ctx = self._normalize_context(context)
         v_size = self.vocab_size
 
-        ctx_count = self.context_counts[norm_ctx]
+        # Check primary context (length n-1)
+        ctx_count = self.context_counts_by_len[self.n - 1][norm_ctx]
         if ctx_count > 0:
-            word_count = self.ngram_counts[norm_ctx][norm_word]
+            word_count = self.counts_by_len[self.n - 1][norm_ctx][norm_word]
             return (word_count + self.k) / (ctx_count + self.k * v_size)
 
         if not use_backoff or self.n <= 1:
             return self.k / (ctx_count + self.k * v_size)
 
-        for order in range(self.n - 1, 0, -1):
-            sub_ctx = norm_ctx[-(order - 1):] if order > 1 else ()
-            sub_ctx_count = self.backoff_context_counts[order][sub_ctx]
-            if sub_ctx_count > 0:
-                sub_word_count = self.backoff_counts[order][sub_ctx][norm_word]
-                return (sub_word_count + self.k) / (sub_ctx_count + self.k * v_size)
+        # Backoff: check progressively shorter contexts from n-2 down to 1
+        for length in range(self.n - 2, 0, -1):
+            sub_ctx = norm_ctx[-length:]
+            sub_count = self.context_counts_by_len[length][sub_ctx]
+            if sub_count > 0:
+                sub_word_count = self.counts_by_len[length][sub_ctx][norm_word]
+                return (sub_word_count + self.k) / (sub_count + self.k * v_size)
 
+        # Fallback to unigram smoothed probability
         unigram_count = self.unigram_counts[norm_word]
         return (unigram_count + self.k) / (self.total_tokens + self.k * v_size)
 
@@ -355,23 +365,23 @@ class NGramLanguageModel:
         """Compute the next-word probability distribution for a given context."""
         norm_ctx = self._normalize_context(context)
         v_size = self.vocab_size
-        ctx_count = self.context_counts[norm_ctx]
+        ctx_count = self.context_counts_by_len[self.n - 1][norm_ctx]
 
         if ctx_count > 0:
             denom = ctx_count + self.k * v_size
-            counts = self.ngram_counts[norm_ctx]
+            counts = self.counts_by_len[self.n - 1][norm_ctx]
             return {word: (counts[word] + self.k) / denom for word in self.vocabulary}
 
         if not use_backoff or self.n <= 1:
             prob = 1.0 / v_size
             return {w: prob for w in self.vocabulary}
 
-        for order in range(self.n - 1, 0, -1):
-            sub_ctx = norm_ctx[-(order - 1):] if order > 1 else ()
-            sub_ctx_count = self.backoff_context_counts[order][sub_ctx]
-            if sub_ctx_count > 0:
-                denom = sub_ctx_count + self.k * v_size
-                counts = self.backoff_counts[order][sub_ctx]
+        for length in range(self.n - 2, 0, -1):
+            sub_ctx = norm_ctx[-length:]
+            sub_count = self.context_counts_by_len[length][sub_ctx]
+            if sub_count > 0:
+                denom = sub_count + self.k * v_size
+                counts = self.counts_by_len[length][sub_ctx]
                 return {w: (counts[w] + self.k) / denom for w in self.vocabulary}
 
         denom = self.total_tokens + self.k * v_size
@@ -394,41 +404,19 @@ class NGramLanguageModel:
             return float("inf")
         return math.exp(-log_prob_sum / token_count)
 
-    def _get_generation_candidates(self, context: tuple[str, ...]) -> dict[str, float]:
-        """Get candidate words and their Add-k smoothed probabilities for text generation.
-        
-        Prioritizes words observed in the n-gram context, backing off gracefully
-        if the context is unseen.
-        """
-        # Primary context check
-        if context in self.ngram_counts and self.ngram_counts[context]:
-            counts = self.ngram_counts[context]
-            denom = self.context_counts[context] + self.k * len(counts)
-            return {
-                w: (c + self.k) / denom
-                for w, c in counts.items()
-                if w not in (START_TOKEN, self.unk_token)
-            }
+    def _get_generation_candidates(self, tokens: list[str]) -> Counter[str]:
+        """Get candidate continuation words based on context backoff hierarchy."""
+        # Check contexts from length n-1 down to 1
+        for length in range(self.n - 1, 0, -1):
+            if len(tokens) >= length:
+                ctx = tuple(tokens[-length:])
+            else:
+                ctx = tuple([START_TOKEN] * (length - len(tokens)) + tokens)
+            
+            if ctx in self.counts_by_len[length] and self.counts_by_len[length][ctx]:
+                return self.counts_by_len[length][ctx]
 
-        # Backoff levels (from n-1 down to 1)
-        for order in range(self.n - 1, 0, -1):
-            sub_ctx = context[-(order - 1):] if order > 1 else ()
-            if sub_ctx in self.backoff_counts[order] and self.backoff_counts[order][sub_ctx]:
-                counts = self.backoff_counts[order][sub_ctx]
-                denom = self.backoff_context_counts[order][sub_ctx] + self.k * len(counts)
-                return {
-                    w: (c + self.k) / denom
-                    for w, c in counts.items()
-                    if w not in (START_TOKEN, self.unk_token)
-                }
-
-        # Fallback to unigram counts
-        denom = self.total_tokens + self.k * len(self.unigram_counts)
-        return {
-            w: (c + self.k) / denom
-            for w, c in self.unigram_counts.items()
-            if w not in (START_TOKEN, self.unk_token)
-        }
+        return self.unigram_counts
 
     def generate(
         self,
@@ -455,23 +443,28 @@ class NGramLanguageModel:
         
         prompt_tokens = tokenize(prompt)
         tokens = list(prompt_tokens)
-        
-        pad_needed = max(0, (self.n - 1) - len(tokens))
-        context_list = [START_TOKEN] * pad_needed + tokens
-        context = tuple(context_list[-(self.n - 1):]) if self.n > 1 else ()
-
         terminal_punct = {".", "!", "?"}
         
         for _ in range(max_length - len(prompt_tokens)):
-            candidates = self._get_generation_candidates(context)
+            raw_counts = self._get_generation_candidates(tokens)
+            
+            # Filter out START_TOKEN and UNK_TOKEN
+            valid_counts = {
+                w: c for w, c in raw_counts.items()
+                if w not in (START_TOKEN, self.unk_token)
+            }
             
             # Suppress END_TOKEN before min_length is reached
-            if len(tokens) < min_length and END_TOKEN in candidates and len(candidates) > 1:
-                candidates = {w: p for w, p in candidates.items() if w != END_TOKEN}
+            if len(tokens) < min_length and END_TOKEN in valid_counts and len(valid_counts) > 1:
+                valid_counts = {w: c for w, c in valid_counts.items() if w != END_TOKEN}
                 
-            if not candidates:
+            if not valid_counts:
                 break
                 
+            # Add-k smoothed probability calculation for candidates
+            denom = sum(valid_counts.values()) + self.k * len(valid_counts)
+            candidates = {w: (c + self.k) / denom for w, c in valid_counts.items()}
+            
             sorted_candidates = sorted(candidates.items(), key=lambda item: item[1], reverse=True)
             if top_k > 0 and len(sorted_candidates) > top_k:
                 sorted_candidates = sorted_candidates[:top_k]
@@ -493,9 +486,6 @@ class NGramLanguageModel:
             
             if stop_on_punct and next_word in terminal_punct and len(tokens) >= min_length:
                 break
-                
-            if self.n > 1:
-                context = tuple((list(context) + [next_word])[-(self.n - 1):])
 
         return detokenize(tokens)
 
@@ -515,7 +505,7 @@ class NGramLanguageModel:
         base_seed = seed if seed is not None else random.randint(0, 1000000)
         
         attempts = 0
-        max_attempts = num_suggestions * 5
+        max_attempts = num_suggestions * 6
         
         while len(suggestions) < num_suggestions and attempts < max_attempts:
             current_seed = base_seed + attempts
@@ -683,5 +673,28 @@ def milestone_3(
 # Milestone 4: Design a CLI Where Users Can Input a Starting Phrase
 # ============================================================================
 
-def milestone_4():  # TODO(milestone 4)
-    raise NotImplementedError("TODO(milestone 4)")
+def milestone_4(
+    prompt: str = "Halt",
+    length: int = 25,
+    suggestions: int = 3,
+    npc: str | None = "Guard",
+) -> dict[str, Any]:
+    """Milestone 4: Design a CLI where users can input a starting phrase and generate dialogue.
+    
+    Verifies that the command-line interface generates dialogue snippets
+    with configurable length, alternatives, and NPC character filtering.
+    """
+    from app.cli import build_parser, handle_generate
+    parser = build_parser()
+    argv = ["generate", prompt, "--length", str(length), "--suggestions", str(suggestions)]
+    if npc:
+        argv.extend(["--npc", npc])
+    args = parser.parse_args(argv)
+    results = handle_generate(args)
+    return {
+        "status": "success",
+        "prompt": prompt,
+        "suggestions": results,
+        "count": len(results),
+        "cli_parser": parser,
+    }
