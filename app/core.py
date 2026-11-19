@@ -11,7 +11,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 
 # Default location of the game dialogues corpus
@@ -77,11 +77,6 @@ def tokenize(text: str, lowercase: bool = False) -> list[str]:
     if lowercase:
         text = text.lower()
     
-    # Regex pattern:
-    # 1. Special tokens like <s>, </s>, <UNK>
-    # 2. Word tokens with internal apostrophes (contractions / possessives)
-    # 3. Numbers / digits
-    # 4. Standard punctuation marks
     pattern = re.compile(
         r"<[A-Za-z0-9_/-]+>|[A-Za-z]+(?:'[A-Za-z]+)?|\d+(?:\.\d+)?|[.,!?;:\"'\(\)\-]"
     )
@@ -112,7 +107,6 @@ def detokenize(tokens: list[str]) -> str:
     
     for token in clean_tokens:
         if token == '"':
-            # Toggle quotation mark spacing
             if in_quote:
                 result.append(token)
                 in_quote = False
@@ -145,10 +139,8 @@ def detokenize(tokens: list[str]) -> str:
         char = match.group(2)
         return prefix + char.upper()
 
-    # Capitalize start of text
     if text:
         text = text[0].upper() + text[1:]
-    # Capitalize after sentence terminators
     text = re.sub(r"([.!?]\s+)([a-z])", _capitalize_match, text)
     return text
 
@@ -184,12 +176,10 @@ def load_corpus_text(path_or_text: str | Path | None = None) -> str:
             return path.read_text(encoding="utf-8")
         raise FileNotFoundError(f"Default corpus not found at {path}")
     
-    # Check if path_or_text is an existing file
     p = Path(path_or_text)
     if p.exists() and p.is_file():
         return p.read_text(encoding="utf-8")
     
-    # Otherwise treat as raw text content
     return str(path_or_text)
 
 
@@ -221,7 +211,6 @@ def preprocess_corpus(
         if npc:
             npc_dialogues[npc].append(dialogue)
         
-        # If an NPC filter is provided, skip dialogues from non-matching NPCs
         if npc_filter:
             if not npc or npc_filter.lower() not in npc.lower():
                 continue
@@ -236,7 +225,6 @@ def preprocess_corpus(
             vocab_counts[token] += 1
             
     vocab = set(vocab_counts.keys())
-    # Ensure special tokens are represented in vocabulary
     vocab.add(START_TOKEN)
     vocab.add(END_TOKEN)
     vocab.add(UNK_TOKEN)
@@ -273,8 +261,211 @@ def milestone_1(source: str | Path | None = None, npc_filter: str | None = None)
 # Milestone 2: Build the N-gram Language Model with Smoothing
 # ============================================================================
 
-def milestone_2():  # TODO(milestone 2)
-    raise NotImplementedError("TODO(milestone 2)")
+class NGramLanguageModel:
+    """N-gram language model with Add-k (Lidstone / Laplace) smoothing and backoff.
+    
+    Attributes:
+        n: Order of the n-gram model (e.g. 2 for bigram, 3 for trigram).
+        k: Add-k smoothing parameter (k > 0).
+        vocabulary: Set of known tokens in vocabulary.
+        ngram_counts: Mapping from context tuple to Counter of next word occurrences.
+        context_counts: Mapping from context tuple to total count of occurrences.
+    """
+
+    def __init__(self, n: int = 3, k: float = 0.1, unk_token: str = UNK_TOKEN):
+        if n < 1:
+            raise ValueError(f"N-gram order n must be at least 1, got {n}")
+        if k <= 0:
+            raise ValueError(f"Smoothing parameter k must be positive, got {k}")
+        self.n = n
+        self.k = k
+        self.unk_token = unk_token
+        self.vocabulary: set[str] = {START_TOKEN, END_TOKEN, unk_token}
+        self.ngram_counts: dict[tuple[str, ...], Counter[str]] = defaultdict(Counter)
+        self.context_counts: Counter[tuple[str, ...]] = Counter()
+        # Fallback counts for backoff: level -> context_tuple -> Counter of words
+        self.backoff_counts: dict[int, dict[tuple[str, ...], Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
+        self.backoff_context_counts: dict[int, Counter[tuple[str, ...]]] = defaultdict(Counter)
+        self.unigram_counts: Counter[str] = Counter()
+        self.total_tokens: int = 0
+
+    @property
+    def vocab_size(self) -> int:
+        return len(self.vocabulary)
+
+    def train(self, sentences: Iterable[Sequence[str]], vocabulary: Iterable[str] | None = None) -> None:
+        """Train the n-gram model on tokenized, padded sentences."""
+        if vocabulary:
+            self.vocabulary.update(vocabulary)
+        self.vocabulary.add(START_TOKEN)
+        self.vocabulary.add(END_TOKEN)
+        self.vocabulary.add(self.unk_token)
+
+        for sentence in sentences:
+            # Update vocabulary from sentence
+            for token in sentence:
+                self.vocabulary.add(token)
+                self.unigram_counts[token] += 1
+                self.total_tokens += 1
+
+            # Count n-grams
+            for i in range(len(sentence) - self.n + 1):
+                ngram = tuple(sentence[i : i + self.n])
+                context = ngram[:-1]
+                word = ngram[-1]
+                self.ngram_counts[context][word] += 1
+                self.context_counts[context] += 1
+
+            # Also train lower-order models for backoff (from n-1 down to 1)
+            for order in range(1, self.n):
+                for i in range(len(sentence) - order):
+                    sub_ngram = tuple(sentence[i : i + order + 1])
+                    sub_ctx = sub_ngram[:-1]
+                    sub_word = sub_ngram[-1]
+                    self.backoff_counts[order][sub_ctx][sub_word] += 1
+                    self.backoff_context_counts[order][sub_ctx] += 1
+
+    def _normalize_token(self, token: str) -> str:
+        """Map unknown tokens to UNK_TOKEN."""
+        return token if token in self.vocabulary else self.unk_token
+
+    def _normalize_context(self, context: Sequence[str], length: int | None = None) -> tuple[str, ...]:
+        """Normalize and pad or trim context to the requested length (default n - 1)."""
+        target_len = self.n - 1 if length is None else length
+        ctx_tokens = [self._normalize_token(t) for t in context]
+        if len(ctx_tokens) < target_len:
+            # Pad on the left with START_TOKEN
+            ctx_tokens = [START_TOKEN] * (target_len - len(ctx_tokens)) + ctx_tokens
+        elif len(ctx_tokens) > target_len:
+            # Take the trailing tokens
+            ctx_tokens = ctx_tokens[-target_len:]
+        return tuple(ctx_tokens)
+
+    def probability(self, context: Sequence[str], word: str, use_backoff: bool = True) -> float:
+        """Calculate the smoothed probability P(word | context) with Add-k smoothing.
+        
+        Formula:
+            P(word | context) = (Count(context, word) + k) / (Count(context) + k * |V|)
+        If context has 0 count and use_backoff is True, backs off to lower-order contexts.
+        """
+        norm_word = self._normalize_token(word)
+        norm_ctx = self._normalize_context(context)
+        v_size = self.vocab_size
+
+        ctx_count = self.context_counts[norm_ctx]
+        if ctx_count > 0:
+            word_count = self.ngram_counts[norm_ctx][norm_word]
+            return (word_count + self.k) / (ctx_count + self.k * v_size)
+
+        if not use_backoff or self.n <= 1:
+            # Unseen context with pure Add-k across full vocabulary
+            return self.k / (ctx_count + self.k * v_size)
+
+        # Backoff: try progressively shorter contexts
+        for order in range(self.n - 1, 0, -1):
+            sub_ctx = norm_ctx[-(order - 1):] if order > 1 else ()
+            sub_ctx_count = self.backoff_context_counts[order][sub_ctx]
+            if sub_ctx_count > 0:
+                sub_word_count = self.backoff_counts[order][sub_ctx][norm_word]
+                return (sub_word_count + self.k) / (sub_ctx_count + self.k * v_size)
+
+        # Final backoff: unigram smoothed probability
+        unigram_count = self.unigram_counts[norm_word]
+        return (unigram_count + self.k) / (self.total_tokens + self.k * v_size)
+
+    def get_distribution(self, context: Sequence[str], use_backoff: bool = True) -> dict[str, float]:
+        """Compute the next-word probability distribution for a given context.
+        
+        Returns a dict mapping each candidate word to its probability.
+        Guarantees that all probabilities sum to 1.0.
+        """
+        norm_ctx = self._normalize_context(context)
+        v_size = self.vocab_size
+        ctx_count = self.context_counts[norm_ctx]
+
+        # Check if context was observed at primary n-gram level
+        if ctx_count > 0:
+            denom = ctx_count + self.k * v_size
+            counts = self.ngram_counts[norm_ctx]
+            dist: dict[str, float] = {}
+            for word in self.vocabulary:
+                dist[word] = (counts[word] + self.k) / denom
+            return dist
+
+        if not use_backoff or self.n <= 1:
+            # Uniform smoothed distribution
+            prob = 1.0 / v_size
+            return {w: prob for w in self.vocabulary}
+
+        # Backoff down through shorter contexts
+        for order in range(self.n - 1, 0, -1):
+            sub_ctx = norm_ctx[-(order - 1):] if order > 1 else ()
+            sub_ctx_count = self.backoff_context_counts[order][sub_ctx]
+            if sub_ctx_count > 0:
+                denom = sub_ctx_count + self.k * v_size
+                counts = self.backoff_counts[order][sub_ctx]
+                return {w: (counts[w] + self.k) / denom for w in self.vocabulary}
+
+        # Fall back to unigram distribution
+        denom = self.total_tokens + self.k * v_size
+        return {w: (self.unigram_counts[w] + self.k) / denom for w in self.vocabulary}
+
+    def perplexity(self, sentences: Iterable[Sequence[str]]) -> float:
+        """Calculate model perplexity on a test set of tokenized sentences.
+        
+        PP(W) = exp( - 1/N * sum(ln P(w_i | context)) )
+        """
+        log_prob_sum = 0.0
+        token_count = 0
+
+        for sentence in sentences:
+            for i in range(self.n - 1, len(sentence)):
+                context = tuple(sentence[i - self.n + 1 : i])
+                word = sentence[i]
+                prob = self.probability(context, word)
+                log_prob_sum += math.log(max(prob, 1e-12))
+                token_count += 1
+
+        if token_count == 0:
+            return float("inf")
+        return math.exp(-log_prob_sum / token_count)
+
+
+def milestone_2(
+    corpus: PreprocessedCorpus | None = None,
+    n: int = 3,
+    k: float = 0.1,
+) -> dict[str, Any]:
+    """Milestone 2: Build the n-gram language model with smoothing.
+    
+    Constructs an n-gram model with Add-k smoothing, trains it on the corpus,
+    and returns the model along with training metrics.
+    """
+    if corpus is None:
+        corpus = preprocess_corpus(n=n)
+    
+    model = NGramLanguageModel(n=n, k=k)
+    model.train(corpus.sentences, vocabulary=corpus.vocabulary)
+    
+    # Verify probability distribution sums to 1.0 for a sample context
+    sample_context = (START_TOKEN,) * (n - 1)
+    dist = model.get_distribution(sample_context)
+    dist_sum = sum(dist.values())
+    
+    # Calculate perplexity on the training corpus
+    ppl = model.perplexity(corpus.sentences[:20])
+    
+    return {
+        "status": "success",
+        "model": model,
+        "n": n,
+        "k": k,
+        "vocab_size": model.vocab_size,
+        "distinct_contexts": len(model.context_counts),
+        "total_tokens_trained": model.total_tokens,
+        "sample_distribution_sum": dist_sum,
+        "perplexity_sample": ppl,
+    }
 
 
 # ============================================================================

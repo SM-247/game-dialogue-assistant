@@ -1,5 +1,6 @@
 """Your tests. Each milestone in README.md gets one here: write the test first, then make it pass."""
 import pytest
+import math
 from pathlib import Path
 
 from app.core import (
@@ -12,6 +13,7 @@ from app.core import (
     parse_dialogue_line,
     preprocess_corpus,
     tokenize,
+    NGramLanguageModel,
     START_TOKEN,
     END_TOKEN,
     UNK_TOKEN,
@@ -65,7 +67,6 @@ def test_preprocess_corpus_padding_and_vocab():
     sample = "Guard: Halt! Who goes there?\nMerchant: Gold speaks louder."
     pre = preprocess_corpus(sample, n=3)
     assert pre.total_sentences == 2
-    # Trigram requires 2 START_TOKENs and 1 END_TOKEN
     assert pre.sentences[0][:2] == [START_TOKEN, START_TOKEN]
     assert pre.sentences[0][-1] == END_TOKEN
     assert START_TOKEN in pre.vocabulary
@@ -89,9 +90,78 @@ def test_milestone_1():
 # ============================================================================
 # Milestone 2: Build the n-gram language model with smoothing.
 # ============================================================================
-@pytest.mark.skip(reason="remove this line when you start milestone 2")
+
+def test_ngram_counting():
+    sentences = [
+        ["<s>", "<s>", "Halt", "!", "</s>"],
+        ["<s>", "<s>", "Halt", ",", "stranger", "</s>"],
+    ]
+    model = NGramLanguageModel(n=3, k=1.0)
+    model.train(sentences)
+    
+    # Context ("<s>", "<s>") occurred twice, followed by "Halt" both times
+    assert model.context_counts[("<s>", "<s>")] == 2
+    assert model.ngram_counts[("<s>", "<s>")]["Halt"] == 2
+    # Context ("<s>", "Halt") followed by "!" once and "," once
+    assert model.context_counts[("<s>", "Halt")] == 2
+    assert model.ngram_counts[("<s>", "Halt")]["!"] == 1
+    assert model.ngram_counts[("<s>", "Halt")][","] == 1
+
+
+def test_add_k_smoothing_probabilities_sum_to_one():
+    sentences = [
+        ["<s>", "<s>", "Halt", "!", "</s>"],
+        ["<s>", "<s>", "Who", "goes", "there", "?", "</s>"],
+    ]
+    model = NGramLanguageModel(n=3, k=0.5)
+    model.train(sentences)
+    
+    context = ("<s>", "<s>")
+    dist = model.get_distribution(context)
+    # Probabilities across all vocabulary words must sum to 1.0
+    assert math.isclose(sum(dist.values()), 1.0, rel_tol=1e-5)
+    
+    # Unseen context should also sum to 1.0
+    unseen_ctx = ("dragons", "flying")
+    dist_unseen = model.get_distribution(unseen_ctx)
+    assert math.isclose(sum(dist_unseen.values()), 1.0, rel_tol=1e-5)
+
+
+def test_add_k_smoothing_assigns_nonzero_probability():
+    sentences = [
+        ["<s>", "<s>", "Stay", "a", "while", "</s>"],
+    ]
+    model = NGramLanguageModel(n=3, k=0.1)
+    model.train(sentences)
+    
+    # "dragon" is unknown/unseen in this context, but smoothing gives it non-zero probability
+    prob = model.probability(("<s>", "<s>"), "dragon")
+    assert prob > 0.0
+
+
+def test_perplexity_calculation():
+    sentences = [
+        ["<s>", "<s>", "Halt", "!", "Who", "goes", "there", "?", "</s>"],
+        ["<s>", "<s>", "Welcome", "traveler", "to", "my", "shop", "</s>"],
+    ]
+    model = NGramLanguageModel(n=3, k=0.1)
+    model.train(sentences)
+    
+    ppl = model.perplexity(sentences)
+    assert ppl > 0
+    assert not math.isinf(ppl)
+    assert not math.isnan(ppl)
+
+
 def test_milestone_2():
-    raise NotImplementedError("write the test for milestone 2")
+    result = milestone_2()
+    assert result["status"] == "success"
+    assert result["n"] == 3
+    assert result["k"] == 0.1
+    assert result["vocab_size"] > 100
+    assert result["distinct_contexts"] > 50
+    assert math.isclose(result["sample_distribution_sum"], 1.0, rel_tol=1e-5)
+    assert result["perplexity_sample"] > 0
 
 
 # ============================================================================
