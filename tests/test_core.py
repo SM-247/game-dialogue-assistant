@@ -6,6 +6,8 @@ from pathlib import Path
 from app.core import (
     clean_text,
     detokenize,
+    generate_dialogue,
+    generate_dialogue_suggestions,
     milestone_1,
     milestone_2,
     milestone_3,
@@ -99,10 +101,8 @@ def test_ngram_counting():
     model = NGramLanguageModel(n=3, k=1.0)
     model.train(sentences)
     
-    # Context ("<s>", "<s>") occurred twice, followed by "Halt" both times
     assert model.context_counts[("<s>", "<s>")] == 2
     assert model.ngram_counts[("<s>", "<s>")]["Halt"] == 2
-    # Context ("<s>", "Halt") followed by "!" once and "," once
     assert model.context_counts[("<s>", "Halt")] == 2
     assert model.ngram_counts[("<s>", "Halt")]["!"] == 1
     assert model.ngram_counts[("<s>", "Halt")][","] == 1
@@ -118,10 +118,8 @@ def test_add_k_smoothing_probabilities_sum_to_one():
     
     context = ("<s>", "<s>")
     dist = model.get_distribution(context)
-    # Probabilities across all vocabulary words must sum to 1.0
     assert math.isclose(sum(dist.values()), 1.0, rel_tol=1e-5)
     
-    # Unseen context should also sum to 1.0
     unseen_ctx = ("dragons", "flying")
     dist_unseen = model.get_distribution(unseen_ctx)
     assert math.isclose(sum(dist_unseen.values()), 1.0, rel_tol=1e-5)
@@ -134,7 +132,6 @@ def test_add_k_smoothing_assigns_nonzero_probability():
     model = NGramLanguageModel(n=3, k=0.1)
     model.train(sentences)
     
-    # "dragon" is unknown/unseen in this context, but smoothing gives it non-zero probability
     prob = model.probability(("<s>", "<s>"), "dragon")
     assert prob > 0.0
 
@@ -167,9 +164,62 @@ def test_milestone_2():
 # ============================================================================
 # Milestone 3: Implement dialogue generation logic using the model.
 # ============================================================================
-@pytest.mark.skip(reason="remove this line when you start milestone 3")
+
+def test_generate_dialogue_starts_with_prompt():
+    prompt = "Welcome to my"
+    dialogue = generate_dialogue(prompt=prompt, seed=42)
+    assert dialogue.lower().startswith("welcome to my")
+    assert len(dialogue.split()) > len(prompt.split())
+
+
+def test_generate_dialogue_respects_max_length():
+    prompt = "The forge"
+    max_len = 10
+    dialogue = generate_dialogue(prompt=prompt, max_length=max_len, seed=123)
+    tokens = tokenize(dialogue)
+    assert len(tokens) <= max_len + 1
+
+
+def test_generate_suggestions_returns_multiple_alternatives():
+    prompt = "Keep your"
+    suggestions = generate_dialogue_suggestions(prompt=prompt, num_suggestions=3, seed=10)
+    assert len(suggestions) >= 2
+    for s in suggestions:
+        assert s.lower().startswith("keep your")
+
+
+def test_dialogue_generation_npc_consistency():
+    # When filtering for Guard, generated dialogue should reflect guard vocabulary
+    guard_dialogue = generate_dialogue(
+        prompt="Halt",
+        npc_filter="Guard",
+        seed=1,
+    )
+    assert "halt" in guard_dialogue.lower()
+
+
+def test_dialogue_generation_custom_corpus(tmp_path):
+    custom_file = tmp_path / "custom.txt"
+    custom_file.write_text(
+        "Alien: Greetings earthling! We come in peace from Mars.\n"
+        "Alien: Beware the cosmic ray beam from our mothership.\n"
+    )
+    dialogue = generate_dialogue(
+        prompt="Greetings earthling",
+        corpus_source=str(custom_file),
+        seed=42,
+    )
+    assert "greetings earthling" in dialogue.lower()
+    assert any(w in dialogue.lower() for w in ["peace", "mars", "we", "come"])
+
+
 def test_milestone_3():
-    raise NotImplementedError("write the test for milestone 3")
+    result = milestone_3(prompt="Welcome", max_length=20, num_suggestions=3, seed=99)
+    assert result["status"] == "success"
+    assert result["prompt"] == "Welcome"
+    assert result["dialogue"].lower().startswith("welcome")
+    assert len(result["suggestions"]) >= 1
+    assert result["num_suggestions"] >= 1
 
 
 # ============================================================================

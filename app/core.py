@@ -34,13 +34,10 @@ def clean_text(text: str) -> str:
     """
     if not text:
         return ""
-    # Normalize curly apostrophes and quotation marks
     text = text.replace("’", "'").replace("‘", "'")
     text = text.replace("“", '"').replace("”", '"')
     text = text.replace("—", " - ").replace("–", " - ")
-    # Replace tabs and multiple whitespace characters with a single space
     text = re.sub(r"[ \t]+", " ", text)
-    # Strip leading and trailing whitespace per line
     lines = [line.strip() for line in text.splitlines()]
     return "\n".join(line for line in lines if line)
 
@@ -54,11 +51,9 @@ def parse_dialogue_line(line: str) -> tuple[str | None, str]:
         "Greetings, hero."              -> (None, "Greetings, hero.")
     """
     line = line.strip()
-    # Match "NPCName: Dialogue"
     match = re.match(r"^([A-Za-z0-9_\s]{1,30}):\s*(.+)$", line)
     if match:
         return match.group(1).strip(), match.group(2).strip()
-    # Match "[NPCName] Dialogue"
     match_bracket = re.match(r"^\[([A-Za-z0-9_\s]{1,30})\]\s*(.+)$", line)
     if match_bracket:
         return match_bracket.group(1).strip(), match_bracket.group(2).strip()
@@ -92,12 +87,10 @@ def detokenize(tokens: list[str]) -> str:
     if not tokens:
         return ""
     
-    # Filter out start/end boundary tokens
     clean_tokens = [t for t in tokens if t not in (START_TOKEN, END_TOKEN, UNK_TOKEN)]
     if not clean_tokens:
         return ""
     
-    # Reassemble tokens with smart spacing
     no_space_before = {".", ",", "!", "?", ";", ":", "'", ")", "]", "}", "”", '"'}
     no_space_after = {"(", "[", "{", "“", '"'}
     
@@ -133,7 +126,6 @@ def detokenize(tokens: list[str]) -> str:
     
     text = "".join(result).strip()
     
-    # Post-process: capitalize the first character and characters following . ! ?
     def _capitalize_match(match: re.Match) -> str:
         prefix = match.group(1)
         char = match.group(2)
@@ -283,7 +275,6 @@ class NGramLanguageModel:
         self.vocabulary: set[str] = {START_TOKEN, END_TOKEN, unk_token}
         self.ngram_counts: dict[tuple[str, ...], Counter[str]] = defaultdict(Counter)
         self.context_counts: Counter[tuple[str, ...]] = Counter()
-        # Fallback counts for backoff: level -> context_tuple -> Counter of words
         self.backoff_counts: dict[int, dict[tuple[str, ...], Counter[str]]] = defaultdict(lambda: defaultdict(Counter))
         self.backoff_context_counts: dict[int, Counter[tuple[str, ...]]] = defaultdict(Counter)
         self.unigram_counts: Counter[str] = Counter()
@@ -302,13 +293,11 @@ class NGramLanguageModel:
         self.vocabulary.add(self.unk_token)
 
         for sentence in sentences:
-            # Update vocabulary from sentence
             for token in sentence:
                 self.vocabulary.add(token)
                 self.unigram_counts[token] += 1
                 self.total_tokens += 1
 
-            # Count n-grams
             for i in range(len(sentence) - self.n + 1):
                 ngram = tuple(sentence[i : i + self.n])
                 context = ngram[:-1]
@@ -316,7 +305,6 @@ class NGramLanguageModel:
                 self.ngram_counts[context][word] += 1
                 self.context_counts[context] += 1
 
-            # Also train lower-order models for backoff (from n-1 down to 1)
             for order in range(1, self.n):
                 for i in range(len(sentence) - order):
                     sub_ngram = tuple(sentence[i : i + order + 1])
@@ -334,20 +322,13 @@ class NGramLanguageModel:
         target_len = self.n - 1 if length is None else length
         ctx_tokens = [self._normalize_token(t) for t in context]
         if len(ctx_tokens) < target_len:
-            # Pad on the left with START_TOKEN
             ctx_tokens = [START_TOKEN] * (target_len - len(ctx_tokens)) + ctx_tokens
         elif len(ctx_tokens) > target_len:
-            # Take the trailing tokens
             ctx_tokens = ctx_tokens[-target_len:]
         return tuple(ctx_tokens)
 
     def probability(self, context: Sequence[str], word: str, use_backoff: bool = True) -> float:
-        """Calculate the smoothed probability P(word | context) with Add-k smoothing.
-        
-        Formula:
-            P(word | context) = (Count(context, word) + k) / (Count(context) + k * |V|)
-        If context has 0 count and use_backoff is True, backs off to lower-order contexts.
-        """
+        """Calculate the smoothed probability P(word | context) with Add-k smoothing."""
         norm_word = self._normalize_token(word)
         norm_ctx = self._normalize_context(context)
         v_size = self.vocab_size
@@ -358,10 +339,8 @@ class NGramLanguageModel:
             return (word_count + self.k) / (ctx_count + self.k * v_size)
 
         if not use_backoff or self.n <= 1:
-            # Unseen context with pure Add-k across full vocabulary
             return self.k / (ctx_count + self.k * v_size)
 
-        # Backoff: try progressively shorter contexts
         for order in range(self.n - 1, 0, -1):
             sub_ctx = norm_ctx[-(order - 1):] if order > 1 else ()
             sub_ctx_count = self.backoff_context_counts[order][sub_ctx]
@@ -369,35 +348,24 @@ class NGramLanguageModel:
                 sub_word_count = self.backoff_counts[order][sub_ctx][norm_word]
                 return (sub_word_count + self.k) / (sub_ctx_count + self.k * v_size)
 
-        # Final backoff: unigram smoothed probability
         unigram_count = self.unigram_counts[norm_word]
         return (unigram_count + self.k) / (self.total_tokens + self.k * v_size)
 
     def get_distribution(self, context: Sequence[str], use_backoff: bool = True) -> dict[str, float]:
-        """Compute the next-word probability distribution for a given context.
-        
-        Returns a dict mapping each candidate word to its probability.
-        Guarantees that all probabilities sum to 1.0.
-        """
+        """Compute the next-word probability distribution for a given context."""
         norm_ctx = self._normalize_context(context)
         v_size = self.vocab_size
         ctx_count = self.context_counts[norm_ctx]
 
-        # Check if context was observed at primary n-gram level
         if ctx_count > 0:
             denom = ctx_count + self.k * v_size
             counts = self.ngram_counts[norm_ctx]
-            dist: dict[str, float] = {}
-            for word in self.vocabulary:
-                dist[word] = (counts[word] + self.k) / denom
-            return dist
+            return {word: (counts[word] + self.k) / denom for word in self.vocabulary}
 
         if not use_backoff or self.n <= 1:
-            # Uniform smoothed distribution
             prob = 1.0 / v_size
             return {w: prob for w in self.vocabulary}
 
-        # Backoff down through shorter contexts
         for order in range(self.n - 1, 0, -1):
             sub_ctx = norm_ctx[-(order - 1):] if order > 1 else ()
             sub_ctx_count = self.backoff_context_counts[order][sub_ctx]
@@ -406,15 +374,11 @@ class NGramLanguageModel:
                 counts = self.backoff_counts[order][sub_ctx]
                 return {w: (counts[w] + self.k) / denom for w in self.vocabulary}
 
-        # Fall back to unigram distribution
         denom = self.total_tokens + self.k * v_size
         return {w: (self.unigram_counts[w] + self.k) / denom for w in self.vocabulary}
 
     def perplexity(self, sentences: Iterable[Sequence[str]]) -> float:
-        """Calculate model perplexity on a test set of tokenized sentences.
-        
-        PP(W) = exp( - 1/N * sum(ln P(w_i | context)) )
-        """
+        """Calculate model perplexity on a test set of tokenized sentences."""
         log_prob_sum = 0.0
         token_count = 0
 
@@ -429,6 +393,146 @@ class NGramLanguageModel:
         if token_count == 0:
             return float("inf")
         return math.exp(-log_prob_sum / token_count)
+
+    def _get_generation_candidates(self, context: tuple[str, ...]) -> dict[str, float]:
+        """Get candidate words and their Add-k smoothed probabilities for text generation.
+        
+        Prioritizes words observed in the n-gram context, backing off gracefully
+        if the context is unseen.
+        """
+        # Primary context check
+        if context in self.ngram_counts and self.ngram_counts[context]:
+            counts = self.ngram_counts[context]
+            denom = self.context_counts[context] + self.k * len(counts)
+            return {
+                w: (c + self.k) / denom
+                for w, c in counts.items()
+                if w not in (START_TOKEN, self.unk_token)
+            }
+
+        # Backoff levels (from n-1 down to 1)
+        for order in range(self.n - 1, 0, -1):
+            sub_ctx = context[-(order - 1):] if order > 1 else ()
+            if sub_ctx in self.backoff_counts[order] and self.backoff_counts[order][sub_ctx]:
+                counts = self.backoff_counts[order][sub_ctx]
+                denom = self.backoff_context_counts[order][sub_ctx] + self.k * len(counts)
+                return {
+                    w: (c + self.k) / denom
+                    for w, c in counts.items()
+                    if w not in (START_TOKEN, self.unk_token)
+                }
+
+        # Fallback to unigram counts
+        denom = self.total_tokens + self.k * len(self.unigram_counts)
+        return {
+            w: (c + self.k) / denom
+            for w, c in self.unigram_counts.items()
+            if w not in (START_TOKEN, self.unk_token)
+        }
+
+    def generate(
+        self,
+        prompt: str = "",
+        max_length: int = 25,
+        min_length: int = 3,
+        temperature: float = 0.7,
+        top_k: int = 20,
+        seed: int | None = None,
+        stop_on_punct: bool = False,
+    ) -> str:
+        """Generate a dialogue snippet starting from prompt.
+        
+        Args:
+            prompt: Initial starting phrase.
+            max_length: Desired maximum length in tokens.
+            min_length: Minimum tokens before END_TOKEN can terminate.
+            temperature: Sampling temperature (0.0 for greedy argmax, >0 for diversity).
+            top_k: Restrict sampling to top K candidate tokens.
+            seed: Optional random seed for reproducible output.
+            stop_on_punct: Stop after terminal punctuation once min_length is reached.
+        """
+        rng = random.Random(seed) if seed is not None else random
+        
+        prompt_tokens = tokenize(prompt)
+        tokens = list(prompt_tokens)
+        
+        pad_needed = max(0, (self.n - 1) - len(tokens))
+        context_list = [START_TOKEN] * pad_needed + tokens
+        context = tuple(context_list[-(self.n - 1):]) if self.n > 1 else ()
+
+        terminal_punct = {".", "!", "?"}
+        
+        for _ in range(max_length - len(prompt_tokens)):
+            candidates = self._get_generation_candidates(context)
+            
+            # Suppress END_TOKEN before min_length is reached
+            if len(tokens) < min_length and END_TOKEN in candidates and len(candidates) > 1:
+                candidates = {w: p for w, p in candidates.items() if w != END_TOKEN}
+                
+            if not candidates:
+                break
+                
+            sorted_candidates = sorted(candidates.items(), key=lambda item: item[1], reverse=True)
+            if top_k > 0 and len(sorted_candidates) > top_k:
+                sorted_candidates = sorted_candidates[:top_k]
+                
+            words, raw_probs = zip(*sorted_candidates)
+            
+            if temperature <= 0.001:
+                next_word = words[0]
+            else:
+                scaled_probs = [p ** (1.0 / temperature) for p in raw_probs]
+                sum_scaled = sum(scaled_probs)
+                norm_probs = [p / sum_scaled for p in scaled_probs]
+                next_word = rng.choices(words, weights=norm_probs, k=1)[0]
+                
+            if next_word == END_TOKEN:
+                break
+                
+            tokens.append(next_word)
+            
+            if stop_on_punct and next_word in terminal_punct and len(tokens) >= min_length:
+                break
+                
+            if self.n > 1:
+                context = tuple((list(context) + [next_word])[-(self.n - 1):])
+
+        return detokenize(tokens)
+
+    def generate_suggestions(
+        self,
+        prompt: str = "",
+        num_suggestions: int = 3,
+        max_length: int = 25,
+        min_length: int = 3,
+        temperature: float = 0.7,
+        top_k: int = 20,
+        seed: int | None = None,
+    ) -> list[str]:
+        """Generate multiple distinct dialogue alternatives for a starting phrase."""
+        suggestions: list[str] = []
+        seen: set[str] = set()
+        base_seed = seed if seed is not None else random.randint(0, 1000000)
+        
+        attempts = 0
+        max_attempts = num_suggestions * 5
+        
+        while len(suggestions) < num_suggestions and attempts < max_attempts:
+            current_seed = base_seed + attempts
+            dialogue = self.generate(
+                prompt=prompt,
+                max_length=max_length,
+                min_length=min_length,
+                temperature=temperature,
+                top_k=top_k,
+                seed=current_seed,
+            )
+            if dialogue and dialogue not in seen:
+                seen.add(dialogue)
+                suggestions.append(dialogue)
+            attempts += 1
+            
+        return suggestions
 
 
 def milestone_2(
@@ -447,12 +551,9 @@ def milestone_2(
     model = NGramLanguageModel(n=n, k=k)
     model.train(corpus.sentences, vocabulary=corpus.vocabulary)
     
-    # Verify probability distribution sums to 1.0 for a sample context
     sample_context = (START_TOKEN,) * (n - 1)
     dist = model.get_distribution(sample_context)
     dist_sum = sum(dist.values())
-    
-    # Calculate perplexity on the training corpus
     ppl = model.perplexity(corpus.sentences[:20])
     
     return {
@@ -472,8 +573,110 @@ def milestone_2(
 # Milestone 3: Implement Dialogue Generation Logic Using the Model
 # ============================================================================
 
-def milestone_3():  # TODO(milestone 3)
-    raise NotImplementedError("TODO(milestone 3)")
+def generate_dialogue(
+    prompt: str = "Greetings traveler",
+    model: NGramLanguageModel | None = None,
+    corpus_source: str | Path | None = None,
+    npc_filter: str | None = None,
+    n: int = 3,
+    k: float = 0.1,
+    max_length: int = 25,
+    min_length: int = 3,
+    temperature: float = 0.7,
+    top_k: int = 20,
+    seed: int | None = None,
+) -> str:
+    """Generate a dialogue snippet using an n-gram model trained on game scripts.
+    
+    Supports custom corpus, NPC filtering for character consistency, length limit,
+    and temperature-controlled generation.
+    """
+    if model is None:
+        corpus = preprocess_corpus(source=corpus_source, n=n, npc_filter=npc_filter)
+        model = NGramLanguageModel(n=n, k=k)
+        model.train(corpus.sentences, vocabulary=corpus.vocabulary)
+
+    return model.generate(
+        prompt=prompt,
+        max_length=max_length,
+        min_length=min_length,
+        temperature=temperature,
+        top_k=top_k,
+        seed=seed,
+    )
+
+
+def generate_dialogue_suggestions(
+    prompt: str = "Greetings traveler",
+    num_suggestions: int = 3,
+    model: NGramLanguageModel | None = None,
+    corpus_source: str | Path | None = None,
+    npc_filter: str | None = None,
+    n: int = 3,
+    k: float = 0.1,
+    max_length: int = 25,
+    min_length: int = 3,
+    temperature: float = 0.7,
+    top_k: int = 20,
+    seed: int | None = None,
+) -> list[str]:
+    """Generate multiple alternative dialogue suggestions for a given starting phrase."""
+    if model is None:
+        corpus = preprocess_corpus(source=corpus_source, n=n, npc_filter=npc_filter)
+        model = NGramLanguageModel(n=n, k=k)
+        model.train(corpus.sentences, vocabulary=corpus.vocabulary)
+
+    return model.generate_suggestions(
+        prompt=prompt,
+        num_suggestions=num_suggestions,
+        max_length=max_length,
+        min_length=min_length,
+        temperature=temperature,
+        top_k=top_k,
+        seed=seed,
+    )
+
+
+def milestone_3(
+    prompt: str = "Greetings traveler",
+    max_length: int = 25,
+    num_suggestions: int = 3,
+    temperature: float = 0.7,
+    seed: int | None = 42,
+    npc_filter: str | None = None,
+) -> dict[str, Any]:
+    """Milestone 3: Implement dialogue generation logic using the model.
+    
+    Generates a coherent dialogue snippet and alternative suggestions given
+    a starting phrase.
+    """
+    corpus = preprocess_corpus(n=3, npc_filter=npc_filter)
+    model = NGramLanguageModel(n=3, k=0.1)
+    model.train(corpus.sentences, vocabulary=corpus.vocabulary)
+    
+    primary_dialogue = model.generate(
+        prompt=prompt,
+        max_length=max_length,
+        temperature=temperature,
+        seed=seed,
+    )
+    
+    suggestions = model.generate_suggestions(
+        prompt=prompt,
+        num_suggestions=num_suggestions,
+        max_length=max_length,
+        temperature=temperature,
+        seed=seed,
+    )
+    
+    return {
+        "status": "success",
+        "prompt": prompt,
+        "dialogue": primary_dialogue,
+        "suggestions": suggestions,
+        "length": max_length,
+        "num_suggestions": len(suggestions),
+    }
 
 
 # ============================================================================
