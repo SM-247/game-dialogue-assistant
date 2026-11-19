@@ -1,0 +1,111 @@
+Guard: Halt! Who goes there? State your business in the city of Highgate.
+Guard: I used to be an adventurer like you, until I took an arrow to the knee.
+Guard: Keep your weapons sheathed within city walls, citizen. We tolerate no brawling here.
+Guard: The city gates close at sundown. Anyone caught outside must fend for themselves.
+Guard: Stay out of trouble, stranger, or you will spend the night in the dungeon cells.
+Guard: Move along, citizen. Nothing to see here.
+Guard: Bandits have been sighted along the northern pass. Travel with great caution.
+Guard: By royal decree, all visitors must register at the citadel before dusk.
+Guard: Watch your step in the lower quarters. The city watch rarely patrols there after dark.
+Guard: Disobey the magistrate's laws and you will answer to my steel.
+Guard: The captain has ordered extra patrols tonight. Keep your eyes sharp and your blade ready.
+Guard: Put that magic away, traveler! You are making the townsfolk nervous.
+Guard: No one enters the royal keep without an official writ from the chancellor.
+Guard: Another quiet watch on the ramparts, just the way I like it.
+Guard: If you see any suspicious figures lurking near the armory, report them immediately.
+Guard: Stand back, citizen! The high inquisitor is arriving with his escort.
+Guard: Pay the toll or turn back, stranger. City gates do not open for free.
+Guard: I heard strange howls from the dark forest last night. Something evil is stirring.
+
+Merchant: Welcome to my shop, traveler! Finest weapons and potions in the realm.
+Merchant: Looking to protect yourself, or deal some damage? I have blades for every purpose.
+Merchant: Take a look at my wares, but keep your hands where I can see them.
+Merchant: Gold speaks louder than words here, friend. What are you buying today?
+Merchant: I have rare curiosities and antiquities imported from across the southern seas.
+Merchant: Fair prices and honest trade, that is the proud motto of my establishment.
+Merchant: Everything has a price, traveler, if your coin purse is heavy enough.
+Merchant: You will find no finer armor in all the kingdom, crafted by master smiths.
+Merchant: Pleasure doing business with you! Return soon when you have more gold.
+Merchant: I cannot buy stolen goods! The city watch would have my head on a pike.
+Merchant: Step right up, travelers! Today only, special discounts on healing salves and antidotes.
+Merchant: These silks were spun in the distant oasis of Karash. Feel the exquisite craftsmanship!
+Merchant: Coin is coin, whether earned through sweat or blood. What can I sell you?
+Merchant: Best hurry and buy your supplies before the trade caravan departs for the capital.
+Merchant: Business has been slow lately with all these bandit raids along the trade routes.
+Merchant: A wise warrior never ventures into a dungeon without a healthy supply of potions.
+
+Mage: The arcane energies in this sanctuary are shifting wildly tonight.
+Mage: Seek knowledge, young apprentice, but beware the corrupting whispers of the void.
+Mage: A pinch of crushed dragon root and powdered silver will cure any venom.
+Mage: The ancient stars foretell a great upheaval coming to our mortal realm.
+Mage: Magic is not a toy for the reckless; one misspoken rune can ignite the sky.
+Mage: I have spent decades studying the forgotten seals of the shadow realm.
+Mage: Do not touch the glowing orb on that shelf unless you desire eternal torment.
+Mage: The spells written in this grimoire were forbidden by the high council for good reason.
+Mage: Harness the flame, channel the wind, but let your mind remain tranquil as water.
+Mage: The ley lines hum with restless power beneath our very feet.
+Mage: Reality is fragile, woven from threads of pure arcane light and ancient dreams.
+Mage: Bring me the glowing crystal from the ruined tower, and I will teach you the firestorm spell.
+Mage: The ethereal spirits speak in riddles, yet their warnings are always true.
+Mage: Never trust an alchemist who cannot explain the transmutation of soul essence.
+Mage: Time is an illusion cast by mortal minds to make sense of the infinite cosmos.
+
+Innkeeper: Welcome to the Prancing Griffin! Pull up a chair and warm yourself by the hearth.
+Innkeeper: What will it be, stranger? A flagon of spiced mead or a bowl of hearty mutton stew?
+Innkeeper: Rest your weary bones, friend. A soft bed costs three silver pieces for the night.
+Innkeeper: Best drink your ale quietly tonight. The mercenaries in the corner are spoiling for a fight.
+Innkeeper: Heard any interesting rumors from the road lately? Travelers bring the best stories.
+Innkeeper: Mind your manners under my roof. I keep an iron club behind the counter for rowdy guests.
+Innkeeper: The cellar has been plagued by giant rats again. Wish an adventurer would clear them out.
+Innkeeper: Last call, patrons! Drink up before the candles burn down to the wax.
+Innkeeper: Room number four is ready upstairs. Mind the loose floorboard near the window.
+Innkeeper: Music and laughter keep the dark winter nights from freezing our spirits.
+Innkeeper: Fresh bread straight from the kitchen oven, baked with mountain wheat and honey!
+Innkeeper: If you are looking for work, check the notice board hanging outside by the stables.
+
+Blacksmith: A dull blade is a warrior's doom. Let me grind a razor edge on that sword for you.
+Blacksmith: This steel was tempered in dragon fire; it will never bend or crack in battle.
+Blacksmith: Bring me five iron ingots and coal from the mines, and I will forge you a master shield.
+Blacksmith: The forge burns hot today, just the way I like it. Sparks fly like embers of war.
+Blacksmith: Every dent in your armor tells a tale of survival. Let me hammer them out for you.
+Blacksmith: Only the finest dwarven steel passes through my anvil, stranger.
+Blacksmith: Quality takes patience and muscle. You cannot rush the hammering of glowing iron.
+Blacksmith: Good steel requires the right heat and cold river water to quench the blade.
+Blacksmith: Take good care of this breastplate, and it will protect your heart when steel clashes.
+
+Elder: May the sacred light watch over your journey through the valley of shadows.
+Elder: Long ago, before the great cataclysm, our ancestors lived in harmony with the wild spirits.
+Elder: Listen closely to the whispers of the ancient trees, for they remember what mortals forget.
+Elder: Do not lose faith, child. Even the darkest midnight must yield to the dawn.
+Elder: The gods test those whom they cherish most. Walk with courage and humility.
+Elder: Seek forgiveness at the holy altar, and your troubled spirit shall find peace once more.
+Elder: An old legend speaks of a chosen champion who will restore the broken seal of eternity.
+Elder: Greed and ambition have brought ruin to mighty empires throughout the ages.
+Elder: True strength is not found in the sharpness of your blade, but in the purity of your convictions.
+
+Rogue: Keep your voice down, or the shadows will swallow both of us whole.
+Rogue: One quick slip of the fingers, and their heavy coin purse was mine.
+Rogue: I know secret passages beneath this castle that the guards never dreamed of.
+Rogue: Trust nobody in the thieves quarter, especially someone smiling with a dagger in their belt.
+Rogue: Information is more valuable than gold in this town, if you know who to sell it to.
+Rogue: A locked chest is just an invitation waiting for the right lockpick.
+Rogue: Stay in the shadows, tread softly, and strike before your enemy even realizes you are there.
+Rogue: Everyone has a secret, stranger. You just need to figure out how much it costs.
+Rogue: The guild does not forgive betrayal. Keep your loyalty pledged to our family.
+
+QuestGiver: Brave adventurer, our village is in dire peril. The goblins have raided our storehouses.
+QuestGiver: Bring me the head of the bandit chieftain, and you will be richly rewarded in gold.
+QuestGiver: The royal army cannot spare soldiers right now; the kingdom needs an independent champion.
+QuestGiver: Take this enchanted medallion; it will protect you from the witch's illusions in the swamp.
+QuestGiver: Return to me once the ancient crypt is cleansed of the undead menace.
+QuestGiver: Rise, hero, and claim the honor that your valor has earned today.
+QuestGiver: We march at first light! Prepare your gear and steel your resolve for the coming battle.
+QuestGiver: Seek the lost tomb in the desolate mountains and retrieve the ancient crown of the king.
+
+Villain: Fools! You dare enter my domain? Your bones will decorate my throne room.
+Villain: Your pitiful magic cannot pierce my armor of obsidian and shadows.
+Villain: You are too late to stop the dark ritual! The ancient shadow shall awaken and consume the realm!
+Villain: Kneel before the supreme power of the abyss, or be destroyed where you stand.
+Villain: Death is not an end, mortal; it is merely an eternity of serving my dark will.
+Villain: Did you truly believe your little rebellion could overthrow my empire of darkness?
+Villain: Witness the birth of a new age, where mortals grovel at the feet of true gods!
